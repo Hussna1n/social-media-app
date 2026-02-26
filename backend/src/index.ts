@@ -1,32 +1,26 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import helmet from 'helmet';
 import mongoose from 'mongoose';
-import http from 'http';
-import { Server as SocketServer } from 'socket.io';
-import routes from './routes';
+import dotenv from 'dotenv';
+import authRoutes from './routes/auth';
+import postRoutes from './routes/posts';
 
 dotenv.config();
+
 const app = express();
-const server = http.createServer(app);
-const io = new SocketServer(server, { cors: { origin: '*' } });
+app.use(helmet());
+app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }));
+app.use(express.json());
 
-app.use(cors()); app.use(express.json());
-app.use('/api', routes);
+app.use('/api/auth', authRoutes);
+app.use('/api/posts', postRoutes);
 
-io.on('connection', socket => {
-  const userId = socket.handshake.auth.userId;
-  socket.join(userId);
-  socket.on('send_message', async ({ receiverId, content }) => {
-    io.to(receiverId).emit('new_message', { senderId: userId, content, createdAt: new Date() });
-  });
-  socket.on('typing', ({ receiverId }) => {
-    io.to(receiverId).emit('user_typing', { userId });
-  });
-  socket.on('disconnect', () => {
-    io.emit('user_offline', { userId });
-  });
-});
+app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/social-media')
-  .then(() => server.listen(5000, () => console.log('Server running on port 5000')));
+mongoose.connect(process.env.MONGODB_URI!).then(() => {
+  console.log('MongoDB connected');
+  app.listen(process.env.PORT || 3000, () =>
+    console.log(`Server running on port ${process.env.PORT || 3000}`)
+  );
+}).catch(err => { console.error(err); process.exit(1); });
